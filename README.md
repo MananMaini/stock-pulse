@@ -66,6 +66,8 @@ pip install -r requirements.txt
 python app.py
 ```
 
+Or on macOS just double-click **`run.command`** (sets everything up and opens the browser).
+
 Open **http://127.0.0.1:8000**, search a stock, then click **🔔 Enable desktop pop-ups**.
 
 ## 📡 API
