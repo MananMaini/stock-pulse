@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StockPulse · Live Watchlist</title>
+<style>
+  :root{--bg:#0b0f17;--card:#141a26;--line:#222b3b;--txt:#e6edf7;--mut:#8a96ab;--up:#22c55e;--down:#ef4444;--acc:#6366f1}
+  *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt)}
+  header{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;border-bottom:1px solid var(--line)}
+  h1{font-size:20px;margin:0}h1 span{color:var(--acc)}
+  .status{font-size:12px;color:var(--mut)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);margin-right:6px;animation:p 1.5s infinite}
+  @keyframes p{50%{opacity:.3}}
+  main{max-width:1200px;margin:auto;padding:24px}
+  .search{position:relative;max-width:520px}
+  .search input{width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt);font-size:15px;outline:none}
+  .search input:focus{border-color:var(--acc)}
+  .results{position:absolute;top:52px;left:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;z-index:5}
+  .results div{padding:10px 14px;cursor:pointer;display:flex;justify-content:space-between}.results div:hover{background:#1c2434}
+  .results small{color:var(--mut)}
+  .controls{display:flex;gap:12px;align-items:center;margin:16px 0 24px;color:var(--mut);font-size:13px;flex-wrap:wrap}
+  .controls select,.controls button{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;position:relative;transition:box-shadow .3s}
+  .card.flash-up{box-shadow:0 0 0 2px var(--up)}.card.flash-down{box-shadow:0 0 0 2px var(--down)}
+  .sym{font-weight:700;font-size:18px}.x{position:absolute;top:12px;right:14px;cursor:pointer;color:var(--mut)}
+  .price{font-size:28px;font-weight:700;margin:6px 0 2px}.chg{font-weight:600}
+  .up{color:var(--up)}.down{color:var(--down)}
+  .meta{font-size:12px;color:var(--mut);margin-top:6px}
+  svg{width:100%;height:50px;margin-top:10px}
+  .alerts{display:flex;gap:6px;margin-top:12px}
+  .alerts input{width:50%;padding:7px;border-radius:8px;border:1px solid var(--line);background:#0e131d;color:var(--txt);font-size:12px}
+  .badge{font-size:11px;color:var(--acc);margin-top:6px;min-height:14px}
+  .empty{color:var(--mut);text-align:center;padding:60px 0}
+  #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:10px;z-index:10}
+  .toast{background:var(--card);border-left:4px solid var(--acc);padding:12px 16px;border-radius:10px;min-width:260px;box-shadow:0 10px 30px #0008;animation:in .3s}
+  .toast b{display:block}@keyframes in{from{transform:translateX(120%)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>📈 Stock<span>Pulse</span></h1>
+  <div class="status"><span class="dot"></span><span id="updated">connecting…</span></div>
+</header>
+<main>
+  <div class="search">
+    <input id="q" placeholder="Search any stock, ETF or crypto — e.g. Apple, NVDA, BTC-USD" autocomplete="off">
+    <div class="results" id="results" hidden></div>
+  </div>
+  <div class="controls">
+    Refresh every
+    <select id="interval"><option value="5000">5s</option><option value="15000" selected>15s</option><option value="60000">1m</option></select>
+    Pop-up on move ≥
+    <select id="movePct"><option value="0">off</option><option value="0.5">0.5%</option><option value="1" selected>1%</option><option value="2">2%</option></select>
+    <button id="notifyBtn">🔔 Enable desktop pop-ups</button>
+  </div>
+  <div class="grid" id="grid"></div>
+</main>
+<div id="toasts"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = {
+  get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
+};
+let watch = store.get('watch', ['AAPL', 'NVDA', 'TSLA']);
+let alerts = store.get('alerts', {});          // {SYM:{above,below}}
+let last = {}, timer;
+
+// ---------- search ----------
+let st;
+$('#q').addEventListener('input', e => {
+  clearTimeout(st);
+  const q = e.target.value.trim();
+  if (!q) return $('#results').hidden = true;
+  st = setTimeout(async () => {
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q)).then(r => r.json());
+    $('#results').innerHTML = r.map(x =>
+      `<div data-s="${x.symbol}"><span><b>${x.symbol}</b> ${x.name}</span><small>${x.exchange}</small></div>`).join('')
+      || '<div><small>No matches</small></div>';
+    $('#results').hidden = false;
+  }, 250);
+});
+$('#results').addEventListener('click', e => {
+  const s = e.target.closest('[data-s]')?.dataset.s;
+  if (s && !watch.includes(s)) { watch.push(s); store.set('watch', watch); render(); refresh(); }
+  $('#results').hidden = true; $('#q').value = '';
+});
+
+// ---------- notifications ----------
+$('#notifyBtn').onclick = async () => {
+  if (!('Notification' in window)) return toast('Not supported', 'Your browser has no desktop notifications.');
+  const p = await Notification.requestPermission();
+  toast('Pop-ups ' + (p === 'granted' ? 'enabled ✅' : 'blocked'), p === 'granted' ? 'You will get alerts even in another tab.' : 'Allow notifications in browser settings.');
+};
+function popup(title, body) {
+  toast(title, body);
+  if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body });
+}
+function toast(t, b) {
+  const el = document.createElement('div'); el.className = 'toast';
+  el.innerHTML = `<b>${t}</b>${b}`; $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+// ---------- rendering ----------
+function spark(d) {
+  if (!d || d.length < 2) return '';
+  const mn = Math.min(...d), mx = Math.max(...d), w = 260, h = 50;
+  const pts = d.map((v, i) => `${(i / (d.length - 1)) * w},${h - ((v - mn) / (mx - mn || 1)) * h}`).join(' ');
+  const c = d.at(-1) >= d[0] ? 'var(--up)' : 'var(--down)';
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline fill="none" stroke="${c}" stroke-width="2" points="${pts}"/></svg>`;
+}
+function render() {
+  $('#grid').innerHTML = watch.length ? watch.map(s => `
+    <div class="card" id="c-${s}">
+      <span class="x" data-rm="${s}">✕</span>
+      <div class="sym">${s}</div>
+      <div class="price" id="p-${s}">—</div>
+      <div class="chg" id="g-${s}"></div>
+      <div class="meta" id="m-${s}"></div>
+      <div id="s-${s}"></div>
+      <div class="alerts">
+        <input type="number" step="any" placeholder="Alert above" data-a="${s}" data-k="above" value="${alerts[s]?.above ?? ''}">
+        <input type="number" step="any" placeholder="Alert below" data-a="${s}" data-k="below" value="${alerts[s]?.below ?? ''}">
+      </div>
+      <div class="badge" id="b-${s}"></div>
+    </div>`).join('') : '<div class="empty">Search above to add stocks to your watchlist.</div>';
+}
+$('#grid').addEventListener('click', e => {
+  const s = e.target.dataset.rm; if (!s) return;
+  watch = watch.filter(x => x !== s); delete alerts[s];
+  store.set('watch', watch); store.set('alerts', alerts); render(); refresh();
+});
+$('#grid').addEventListener('change', e => {
+  const { a, k } = e.target.dataset; if (!a) return;
+  alerts[a] = alerts[a] || {};
+  alerts[a][k] = e.target.value === '' ? null : +e.target.value;
+  store.set('alerts', alerts);
+  toast(`Alert saved for ${a}`, `${k} ${e.target.value || '(cleared)'}`);
+});
+
+// ---------- live data ----------
+async function refresh() {
+  if (!watch.length) return;
+  let data;
+  try { data = await fetch('/api/quotes?symbols=' + watch.join(',')).then(r => r.json()); }
+  catch { $('#updated').textContent = 'offline – retrying'; return; }
+  const movePct = +$('#movePct').value;
+  for (const q of data) {
+    const s = q.symbol; if (q.error || !$('#p-' + s)) continue;
+    const cls = q.change >= 0 ? 'up' : 'down';
+    $('#p-' + s).textContent = `${q.currency === 'USD' ? '$' : ''}${q.price.toLocaleString()}`;
+    $('#g-' + s).className = 'chg ' + cls;
+    $('#g-' + s).textContent = `${q.change >= 0 ? '▲' : '▼'} ${q.change} (${q.changePct}%)`;
+    $('#m-' + s).textContent = `Day ${q.dayLow} – ${q.dayHigh} · Prev ${q.prevClose}`;
+    $('#s-' + s).innerHTML = spark(q.spark);
+
+    const prev = last[s];
+    if (prev !== undefined && prev !== q.price) {
+      const card = $('#c-' + s); card.classList.add(q.price > prev ? 'flash-up' : 'flash-down');
+      setTimeout(() => card.classList.remove('flash-up', 'flash-down'), 800);
+    }
+    // move alert (once per threshold crossing)
+    if (movePct && Math.abs(q.changePct) >= movePct && !alerts[s]?._moved) {
+      popup(`${s} ${q.changePct > 0 ? '🚀 up' : '📉 down'} ${q.changePct}% today`, `Now $${q.price}`);
+      alerts[s] = { ...(alerts[s] || {}), _moved: true };
+    }
+    // target alerts
+    const a = alerts[s] || {};
+    if (a.above != null && q.price >= a.above) { popup(`🔔 ${s} crossed above $${a.above}`, `Now $${q.price}`); a.above = null; }
+    if (a.below != null && q.price <= a.below) { popup(`🔔 ${s} dropped below $${a.below}`, `Now $${q.price}`); a.below = null; }
+    $('#b-' + s).textContent = [a.above != null && `↑ ${a.above}`, a.below != null && `↓ ${a.below}`].filter(Boolean).join('  ') && 'Active: ' + [a.above != null && `↑ ${a.above}`, a.below != null && `↓ ${a.below}`].filter(Boolean).join('  ');
+    alerts[s] = a; last[s] = q.price;
+  }
+  store.set('alerts', alerts);
+  $('#updated').textContent = 'Live · updated ' + new Date().toLocaleTimeString();
+}
+function start() { clearInterval(timer); refresh(); timer = setInterval(refresh, +$('#interval').value); }
+$('#interval').onchange = start;
+render(); start();
+</script>
+</body>
+</html>

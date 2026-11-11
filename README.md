@@ -1,104 +1,93 @@
 <div align="center">
 
-# 📈 CTC Market Bot
+# 📈 StockPulse
 
-**A Discord bot that turns your investment club's server into a live trading desk.**
+**Pick any stocks. Watch them live. Get a pop-up the moment they move.**
 
-Shared watchlists · Price alerts · Automatic daily market-close reports
+A real-time stock watchlist web app with per-stock price alerts and desktop notifications.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
-![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![JavaScript](https://img.shields.io/badge/Vanilla_JS-F7DF1E?logo=javascript&logoColor=black)
 ![yfinance](https://img.shields.io/badge/data-yfinance-6001D2)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Lint](https://github.com/MananMaini/ctc-market-bot/actions/workflows/lint.yml/badge.svg)
+![Lint](https://github.com/MananMaini/stock-pulse/actions/workflows/lint.yml/badge.svg)
 
 </div>
 
 ---
 
-## 💡 Why
-
-Built for **Core Trading Consultants (CTC)**, a student investment group in Ithaca, NY.
-Analysts were juggling Yahoo Finance tabs, group chats and spreadsheets to track pitches.
-This bot puts the whole club's watchlist, alerts and daily recap **inside the Discord server everyone already uses.**
-
 ## ✨ Features
 
-| Command | What it does |
-|---|---|
-| `/price AAPL` | Live price + daily % change |
-| `/watch add NVDA` | Add to the shared club watchlist |
-| `/watch remove NVDA` | Remove from watchlist |
-| `/watch list` | Watchlist with live prices, 🟢/🔴 |
-| `/alert BIIB above 300` | Pings you when the target is hit |
-| `/alerts` | All active alerts |
-| ⏰ **Daily Close** | Top 3 gainers & losers posted at **4:15 PM ET** automatically |
+- 🔎 **Search anything:** stocks, ETFs, indices, crypto (`Apple`, `NVDA`, `^GSPC`, `BTC-USD`).
+- ⚡ **Live prices:** auto-refresh every 5s / 15s / 1m, with green/red flash on every tick.
+- 📉 **Intraday sparkline** per stock, plus day range and previous close.
+- 🔔 **Per-stock alerts:** set *above* / *below* targets on each card.
+- 🚀 **Big-move pop-ups:** get notified when a stock moves ±0.5% / 1% / 2% on the day.
+- 🖥️ **Desktop notifications:** alerts reach you even in another tab.
+- 💾 **Remembers your watchlist & alerts:** no account needed.
 
 ## 🖼️ Preview
 
-```
-📊 CTC Daily Close
-Top gainers
-🟢 NVDA  $142.10 (+3.42%)
-🟢 BIIB  $187.55 (+1.98%)
-🟢 AMZN  $214.30 (+1.12%)
-Top losers
-🔴 TSLA  $251.40 (-2.75%)
-🔴 NFLX  $689.20 (-1.31%)
-🔴 DIS   $96.85  (-0.64%)
+> _Add a screenshot: `docs/screenshot.png`_
 
-🔔 @Manan BIIB $190.02 (+1.32%) hit your target $190.00
+```
+┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
+│ NVDA              ✕  │ │ AAPL              ✕  │ │ BTC-USD           ✕  │
+│ $142.10              │ │ $228.45              │ │ $91,240              │
+│ ▲ 4.70 (+3.42%)      │ │ ▼ 1.20 (-0.52%)      │ │ ▲ 1,820 (+2.04%)     │
+│ ╱╲╱‾‾╲╱‾‾‾‾╱         │ │ ‾‾╲╱╲__╱╲_           │ │ _╱‾╲╱‾‾╱‾‾           │
+│ [↑ 150] [↓ 135]      │ │ [↑ 235] [↓ 220]      │ │ [↑ 95000] [↓ ]       │
+└──────────────────────┘ └──────────────────────┘ └──────────────────────┘
+                                         🔔 NVDA 🚀 up 3.42% today · Now $142.10
 ```
 
 ## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
-    U[Club members] -->|slash commands| D[Discord]
-    D <--> B[CTC Market Bot<br/>discord.py]
-    B -->|async threads| Y[yfinance<br/>market data]
-    B <--> J[(data.json<br/>watchlist + alerts)]
-    S[Scheduler<br/>tasks.loop] -->|4:15 PM ET| B
-    S -->|every 5 min| B
+    UI[Browser UI<br/>HTML + JS] -->|/api/search| API[FastAPI]
+    UI -->|/api/quotes every N sec| API
+    API -->|thread pool| YF[yfinance<br/>Yahoo Finance]
+    UI --> LS[(localStorage<br/>watchlist + alerts)]
+    UI --> N[Notifications API<br/>desktop pop-ups]
 ```
 
-- **Non-blocking:** yfinance calls run in `asyncio.to_thread`, so the bot never freezes.
-- **Concurrent quotes:** watchlist prices fetched in parallel with `asyncio.gather`.
-- **Timezone-aware scheduling:** daily report pinned to New York market close.
-- **Zero-infra persistence:** JSON file; easy to swap for SQLite/Postgres.
+- **Parallel quotes:** a thread pool fetches all symbols at once.
+- **Zero build step:** one HTML file, no React or npm.
+- **Alert logic client-side:** fires once per crossing, no spam.
 
-## 🚀 Quick start
+## 🚀 Run it
 
 ```bash
-git clone https://github.com/MananMaini/ctc-market-bot.git
-cd ctc-market-bot
+git clone https://github.com/MananMaini/stock-pulse.git
+cd stock-pulse
 pip install -r requirements.txt
-cp .env.example .env      # add DISCORD_TOKEN + CHANNEL_ID
-python bot.py
+python app.py
 ```
 
-**Create the bot:** [Discord Developer Portal](https://discord.com/developers/applications) → New App → Bot → copy token →
-OAuth2 → URL Generator → scopes `bot` + `applications.commands` → permissions *Send Messages*, *Embed Links* → invite.
+Open **http://127.0.0.1:8000**, search a stock, then click **🔔 Enable desktop pop-ups**.
 
-**Run 24/7 free:** Railway, Render, Fly.io, or a Raspberry Pi.
+## 📡 API
+
+| Endpoint | Example |
+|---|---|
+| `GET /api/search?q=apple` | Symbol lookup |
+| `GET /api/quotes?symbols=AAPL,NVDA` | Price, change, day range, intraday series |
 
 ## 🗺️ Roadmap
 
-- [ ] Earnings-calendar reminders for watchlist names
-- [ ] Weekly club portfolio P&L report with charts
-- [ ] Per-ticker news headlines + sentiment score
-- [ ] Pitch tracker: log a pitch, track its return since pitch date
-- [ ] SQLite storage + Docker image
-
-## 🤝 Contributing
-
-PRs welcome. Open an issue for ideas or bugs.
+- [ ] WebSocket streaming instead of polling
+- [ ] Email / SMS / Discord alert channels
+- [ ] Candlestick charts with technical indicators
+- [ ] Portfolio mode: holdings, cost basis, P&L
+- [ ] One-click deploy (Render / Railway)
 
 ## 👤 Author
 
-**Manan Maini** · Business Analytics @ Ithaca College · Junior Analyst @ CTC
+**Manan Maini** · Business Analytics + CS @ Ithaca College
 [LinkedIn](https://linkedin.com/in/mainimanan) · [GitHub](https://github.com/MananMaini)
 
-⭐ If your club finds this useful, star the repo!
+⭐ Star the repo if you find it useful!
 
-> Not financial advice. Market data from Yahoo Finance via yfinance, may be delayed.
+> Not financial advice. Data from Yahoo Finance via yfinance; may be delayed.
